@@ -1,0 +1,27 @@
+name: Daily Top Gainers Ingestion
+
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"  # 4:30pm ET, weekdays
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run ingestion
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python src/collect_gainers.py
