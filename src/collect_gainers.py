@@ -3,6 +3,7 @@ import time
 import random
 from datetime import date
 from db import get_connection
+from psycopg2.extras import Json
 
 US_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?count=100&scrIds=day_gainers"
 CA_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?count=100&scrIds=day_gainers&region=CA"
@@ -73,7 +74,7 @@ def main():
                 stock.get("regularMarketVolume"),
                 stock.get("marketCap"),
                 stock.get("trailingPE"),
-                stock  # JSONB
+                Json(stock)  # JSONB
             ))
 
         # polite delay between markets
