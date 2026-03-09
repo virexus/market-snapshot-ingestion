@@ -1,0 +1,54 @@
+name: Regime Detector — Daily Signal
+
+on:
+  schedule:
+    # 4:30 PM ET = 21:30 UTC (works for EST)
+    # During EDT (summer) ET is UTC-4, so use 20:30 UTC
+    # Using 21:30 UTC to be safe — data is always settled by then
+    - cron: '30 21 * * 1-5'   # Mon–Fri at 21:30 UTC
+
+  workflow_dispatch:           # Allow manual trigger from GitHub UI
+
+jobs:
+  regime-signal:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # required for git push of signal log
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run regime detector
+        env:
+          # Email notifications (optional — add these in repo Settings → Secrets)
+          SMTP_HOST:     ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:     ${{ secrets.SMTP_PORT }}
+          SMTP_USER:     ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          NOTIFY_TO:     ${{ secrets.NOTIFY_TO }}
+        run: python regime_detector/main.py
+
+      - name: Commit updated data & signal log
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add regime_detector/data/
+          git diff --cached --quiet || git commit -m "chore: regime signal update $(date -u +%Y-%m-%d)"
+          git push

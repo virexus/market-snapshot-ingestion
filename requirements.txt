@@ -2,3 +2,4 @@ pandas
 beautifulsoup4
 psycopg2-binary
 requests
+yfinance>=0.2.40
