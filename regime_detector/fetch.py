@@ -87,6 +87,7 @@ def fetch_latest(ticker_key: str, existing_rows: list[dict]) -> list[dict]:
     last_date    = existing_rows[-1]['date'] if existing_rows else '2020-01-01'
     start        = (datetime.strptime(last_date, '%Y-%m-%d') + timedelta(days=1)).strftime('%Y-%m-%d')
     today        = datetime.today().strftime('%Y-%m-%d')
+    tomorrow     = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
 
     if start >= today:
         logger.info(f"{ticker_key}: already up to date ({last_date})")
@@ -94,7 +95,8 @@ def fetch_latest(ticker_key: str, existing_rows: list[dict]) -> list[dict]:
 
     logger.info(f"{ticker_key}: fetching {start} → {today}")
     try:
-        df = yf.download(yahoo_symbol, start=start, end=today,
+        # end is exclusive in yfinance — use tomorrow so today's close is included
+        df = yf.download(yahoo_symbol, start=start, end=tomorrow,
                          auto_adjust=True, progress=False)
         # yfinance ≥0.2.55 returns MultiIndex columns even for single tickers
         if isinstance(df.columns, object) and hasattr(df.columns, 'levels'):
