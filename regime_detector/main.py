@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fetch   import load_and_update_all
-from regime  import compute_signal, should_act
+from regime  import compute_signal, should_act, explain
 from notify  import (load_signal_log, append_signal_log,
                      get_prev_signal, get_signal_history,
                      get_last_alerted_signal, notify)
@@ -60,16 +60,20 @@ def run():
 
     logger.info(f"Data date: {data_date} | QQQ: ${qqq_price:.2f} | VIX: {vix_value:.2f}")
 
-    # 3. Compute regime signal
-    result = compute_signal(qqq_rows, vix_value)
+    # 3. Compute regime signal (V7: vix_rows is a list, not a scalar)
+    result = compute_signal(qqq_rows, vix_rows)
     signal     = result['signal']
     confidence = result['confidence']
-    master     = result['master']
-    score      = result['score']
-    ind        = result['indicators']
+    rule       = result['rule']
+    # Derive a master label for notification display
+    master = 'BULL' if result['golden_cross'] else ('BEAR' if result['ema200_dist'] < -1.0 else 'CHOP')
 
-    logger.info(f"Signal: {signal} ({confidence}%) | Master: {master} | Score: {score:+d}")
-    logger.info(f"EMA200 dist: {ind['ema200_dist']:+.2f}% | RSI: {ind['rsi']} | MACD hist: {ind['macd_hist']}")
+    logger.info(f"Signal: {signal} ({confidence}%) | Rule: {rule}")
+    logger.info(
+        f"EMA200 dist: {result['ema200_dist']:+.2f}%"
+        f" | RSI14: {result['rsi14']} | RSI5: {result['rsi5']}"
+        f" | MACD hist: {result['macd_hist']}"
+    )
 
     # 4. Load history and check confirmation
     log           = load_signal_log()
@@ -78,10 +82,10 @@ def run():
     sig_history   = get_signal_history(log, n=5)
     sig_history.append(signal)  # include today
 
-    # confirmed = signal has held for 2 consecutive closes (yesterday in log + today)
-    # action_required = confirmed AND haven't already alerted for this signal direction
-    changed         = signal != prev_signal
-    confirmed       = should_act(signal, prev_signal, sig_history, confirm_days=2)
+    # confirmed = signal held for 2 consecutive closes (yesterday in log + today)
+    # action_required = confirmed AND haven't already alerted for this direction
+    changed         = should_act(signal, prev_signal)   # V7: simple signal != prev check
+    confirmed       = len(sig_history) >= 2 and all(s == signal for s in sig_history[-2:])
     action_required = confirmed and (signal != last_alerted)
 
     if changed and not confirmed:
@@ -91,33 +95,20 @@ def run():
     else:
         logger.info(f"No change: holding {signal}")
 
-    # 5. Build reasoning string
-    master_desc = {
-        'BULL': f"QQQ {ind['ema200_dist']:+.1f}% above EMA200 (${ind['ema200']:.2f}) — bull market confirmed.",
-        'BEAR': f"QQQ {ind['ema200_dist']:+.1f}% below EMA200 (${ind['ema200']:.2f}) — bear market confirmed.",
-        'CHOP': f"QQQ within ±1% of EMA200 (${ind['ema200']:.2f}) — transitional zone.",
-    }[master]
-
-    reasoning = (
-        f"{master_desc} "
-        f"Layer 2 score {score:+d}: "
-        f"EMA20 {ind['ema20']:.2f} vs EMA50 {ind['ema50']:.2f}, "
-        f"RSI {ind['rsi']:.1f}, MACD hist {ind['macd_hist']:+.4f}, "
-        f"BB%B {ind['bb_pct']*100:.0f}%, W%R {ind['williams_r']:.1f}, "
-        f"VIX {vix_value:.1f}."
-    )
+    # 5. Build reasoning string (V7 explain() returns a formatted one-liner)
+    reasoning = explain(result)
 
     # 6. Log and notify
     append_signal_log(
         date=data_date, signal=signal, confidence=confidence,
-        master=master, score=score, qqq_price=qqq_price,
+        master=master, score=rule, qqq_price=qqq_price,
         tqqq_price=tqqq_price, sqqq_price=sqqq_price,
         vix=vix_value, action_required=action_required,
     )
 
     notify(
         date=data_date, signal=signal, confidence=confidence,
-        master=master, score=score, reasoning=reasoning,
+        master=master, score=rule, reasoning=reasoning,
         qqq_price=qqq_price, tqqq_price=tqqq_price,
         sqqq_price=sqqq_price, vix=vix_value,
         prev_signal=prev_signal, action_required=action_required,
