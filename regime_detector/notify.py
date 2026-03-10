@@ -143,7 +143,7 @@ def build_message(date: str, signal: str, confidence: int, master: str,
 def send_email(subject: str, body: str) -> bool:
     """Send email notification. Returns True if successful."""
     host     = os.getenv('SMTP_HOST')
-    port     = int(os.getenv('SMTP_PORT', 587))
+    port     = int(os.getenv('SMTP_PORT') or 587)
     user     = os.getenv('SMTP_USER')
     password = os.getenv('SMTP_PASSWORD')
     to_addr  = os.getenv('NOTIFY_TO')
@@ -190,10 +190,27 @@ def notify(date: str, signal: str, confidence: int, master: str,
     # Always print — shows up in GitHub Actions run log
     print(msg)
 
+    # Write to GitHub Actions Step Summary (renders as markdown in the Actions UI)
+    import os
+    summary_file = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary_file:
+        signal_emoji = SIGNAL_EMOJI.get(signal, '⚪')
+        alert_line = '🔔 **CONFIRMED — execute at tomorrow open**' if action_required else '⏳ Watching — no action yet'
+        with open(summary_file, 'a', encoding='utf-8') as f:
+            f.write(f"## {signal_emoji} Regime Detector — {date}\n\n")
+            f.write(f"{alert_line}\n\n")
+            f.write(f"| Signal | Confidence | Regime | QQQ | TQQQ | SQQQ | VIX |\n")
+            f.write(f"|--------|-----------|--------|-----|------|------|-----|\n")
+            f.write(f"| **{signal}** | {confidence}% | {master} | ${qqq_price:.2f} | ${tqqq_price:.2f} | ${sqqq_price:.2f} | {vix:.1f} |\n\n")
+            f.write(f"**Analysis:** {reasoning}\n\n")
+            if action_required:
+                f.write(f"**Action:** {ACTION_MAP.get((prev_signal, signal), 'See signal above')}\n\n")
+            f.write("> ⚠️ Educational only. Not financial advice.\n")
+
     # Email if configured
-    if action_required:
-        subject = f"⚡ REGIME CHANGE: {prev_signal} → {signal} | {date}"
-        send_email(subject, msg)
-    else:
-        subject = f"{SIGNAL_EMOJI.get(signal,'⚪')} Regime: {signal} ({confidence}%) | {date}"
-        send_email(subject, msg)
+    # if action_required:
+    #     subject = f"⚡ REGIME CHANGE: {prev_signal} → {signal} | {date}"
+    #     send_email(subject, msg)
+    # else:
+    #     subject = f"{SIGNAL_EMOJI.get(signal,'⚪')} Regime: {signal} ({confidence}%) | {date}"
+    #     send_email(subject, msg)
