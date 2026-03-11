@@ -1,3 +1,4 @@
 date,signal,confidence,master,score,qqq_price,tqqq_price,sqqq_price,vix,action_required
 2026-03-09,BUY_TQQQ,88,BULL,1,607.76,49.39,70.6,25.5,False
 2026-03-09,BUY_TQQQ,88,BULL,1,607.76,49.39,70.6,25.5,True
+2026-03-10,BUY_TQQQ,88,BULL,1,607.77,49.4,70.59,24.93,False
