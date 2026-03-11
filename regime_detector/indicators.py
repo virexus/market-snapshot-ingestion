@@ -108,16 +108,17 @@ def calc_roc(closes: list, period: int) -> float:
     return round((closes[-1] / closes[-period - 1] - 1) * 100, 4)
 
 
-def get_qqq_indicators(rows: list, vix_rows: list = None) -> dict:
+def get_qqq_indicators(rows: list, vix_rows: list = None, qqqe_rows: list = None) -> dict:
     """
     Compute all indicators from QQQ OHLCV rows.
     Requires at least 210 rows (for EMA200).
 
     Args:
-        rows     : QQQ OHLCV dicts sorted oldest to newest
-        vix_rows : VIX close dicts sorted oldest to newest (optional)
+        rows      : QQQ OHLCV dicts sorted oldest to newest
+        vix_rows  : VIX close dicts sorted oldest to newest (optional)
+        qqqe_rows : QQQE close dicts sorted oldest to newest (optional, Rule ⑨)
 
-    Returns dict of all indicator values needed by V7, or None if insufficient data.
+    Returns dict of all indicator values needed by V8, or None if insufficient data.
     """
     if len(rows) < 210:
         return None
@@ -172,6 +173,16 @@ def get_qqq_indicators(rows: list, vix_rows: list = None) -> dict:
         vix_5avg  = sum(r['close'] for r in vix_rows[-5:]) / 5
         vix_retreat = (vix_now < vix_5avg) and (vix_5avg > 28)
 
+    # QQQE Breadth Divergence (Rule ⑨)
+    qqqe_price      = 0.0
+    qqqe_ema200     = 0.0
+    breadth_warning = False
+    if qqqe_rows and len(qqqe_rows) >= 210:
+        qqqe_closes  = [r['close'] for r in qqqe_rows]
+        qqqe_price   = qqqe_closes[-1]
+        qqqe_ema200  = calc_ema(qqqe_closes, 200)[-1]
+        breadth_warning = qqqe_price < qqqe_ema200
+
     return {
         # Price
         'price':          round(price, 2),
@@ -218,4 +229,9 @@ def get_qqq_indicators(rows: list, vix_rows: list = None) -> dict:
         'vix':            round(vix_now,  2),
         'vix_5avg':       round(vix_5avg, 2),
         'vix_retreat':    vix_retreat,
+
+        # QQQE Breadth (Rule ⑨)
+        'qqqe_price':       round(qqqe_price,  2),
+        'qqqe_ema200':      round(qqqe_ema200, 2),
+        'breadth_warning':  breadth_warning,
     }

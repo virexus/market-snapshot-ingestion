@@ -19,6 +19,7 @@ TICKERS = {
     'TQQQ': 'TQQQ',
     'SQQQ': 'SQQQ',
     'VIX':  '^VIX',
+    'QQQE': 'QQQE',   # Equal-weight Nasdaq 100 — breadth divergence (Rule ⑨)
 }
 
 DATA_DIR = Path(__file__).parent / 'data'
@@ -35,19 +36,22 @@ def _parse_date(date_str: str) -> str:
 
 
 def load_csv(path: Path) -> list[dict]:
-    """Load OHLCV rows from a CSV file (Google Finance or our own format)."""
+    """Load OHLCV rows from a CSV file (Google Finance or our own format).
+       Handles Close-only CSVs (like QQQE from Google Finance) by filling
+       Open/High/Low from Close and Volume as 0."""
     rows = []
     with open(path, newline='') as f:
         reader = csv.DictReader(f)
         for row in reader:
             try:
+                close = float(row['Close'])
                 rows.append({
                     'date':   _parse_date(row['Date']),
-                    'open':   float(row['Open']),
-                    'high':   float(row['High']),
-                    'low':    float(row['Low']),
-                    'close':  float(row['Close']),
-                    'volume': float(row['Volume']),
+                    'open':   float(row.get('Open', close)),
+                    'high':   float(row.get('High', close)),
+                    'low':    float(row.get('Low', close)),
+                    'close':  close,
+                    'volume': float(row.get('Volume', 0)),
                 })
             except Exception as e:
                 logger.debug(f"Skipping row: {e}")

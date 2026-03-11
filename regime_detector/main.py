@@ -46,6 +46,7 @@ def run():
     tqqq_rows = data['TQQQ']
     sqqq_rows = data['SQQQ']
     vix_rows  = data['VIX']
+    qqqe_rows = data.get('QQQE', [])
 
     if len(qqq_rows) < 210:
         logger.error("Not enough QQQ data — need 210+ rows for EMA200")
@@ -58,10 +59,10 @@ def run():
     vix_value  = vix_rows[-1]['close']  if vix_rows  else 20.0
     data_date  = qqq_rows[-1]['date']
 
-    logger.info(f"Data date: {data_date} | QQQ: ${qqq_price:.2f} | VIX: {vix_value:.2f}")
+    logger.info(f"Data date: {data_date} | QQQ: ${qqq_price:.2f} | VIX: {vix_value:.2f} | QQQE: ${qqqe_rows[-1]['close']:.2f}" if qqqe_rows else f"Data date: {data_date} | QQQ: ${qqq_price:.2f} | VIX: {vix_value:.2f} | QQQE: N/A")
 
-    # 3. Compute regime signal (V7: vix_rows is a list, not a scalar)
-    result = compute_signal(qqq_rows, vix_rows)
+    # 3. Compute regime signal (V8: qqqe_rows added for breadth divergence)
+    result = compute_signal(qqq_rows, vix_rows, qqqe_rows)
     signal     = result['signal']
     confidence = result['confidence']
     rule       = result['rule']
@@ -73,6 +74,7 @@ def run():
         f"EMA200 dist: {result['ema200_dist']:+.2f}%"
         f" | RSI14: {result['rsi14']} | RSI5: {result['rsi5']}"
         f" | MACD hist: {result['macd_hist']}"
+        f" | QQQE breadth: {'⚠ WARNING' if result.get('breadth_warning') else 'OK'}"
     )
 
     # 4. Load history and check confirmation

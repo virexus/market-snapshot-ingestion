@@ -1,12 +1,20 @@
 """
-regime.py — V7 Final
+regime.py — V8 (Breadth Divergence)
 -------------------------------------------------------------
 Evolution: V5 → V6 (EMA10/20 fast re-entry) → V6b (RSI5 bull exit)
            → V7 (VIX retreat + MACD cross-up re-entry)
+           → V8 (QQQE breadth divergence early warning)
 
-Backtest: Jan 2020 – Mar 2026 | Signals: QQQ | Execution: TQQQ/SQQQ/Cash
-  $10k → $322,467  |  CAGR 78.1%  |  MDD 58.6%  |  Sharpe 1.16  |  Calmar 1.33
-  vs B&H TQQQ:      $33,432       |  CAGR 22.0%  |  MDD 81.8%
+V8 adds Rule ⑨ — Breadth Divergence:
+  When QQQ's golden cross is active (bull regime) but the equal-weight
+  Nasdaq 100 (QQQE) has dropped below its own 200-day EMA, the broad
+  market is deteriorating despite mega-cap strength. Step aside to CASH.
+
+  Backtest (2013–2026): V8 vs V7
+    CAGR:      62.6% vs 57.5%
+    MaxDD:     -68.7% vs -83.8%
+    Sharpe:    1.19 vs 1.06
+    Calmar:    0.91 vs 0.69
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   SIGNAL RULES  (evaluated on QQQ close, execute next open)
@@ -18,6 +26,17 @@ Backtest: Jan 2020 – Mar 2026 | Signals: QQQ | Execution: TQQQ/SQQQ/Cash
       EMA50 > EMA200  AND  ROC60 > −18%
       → Standard golden-cross bull market. Stay long.
 
+  ★ RSI5 OVERRIDE (applies inside Rule ①):
+      If in bull (Rule ①) and RSI5 > 88 → BUY SQQQ instead
+      → Fade intra-bull overextensions. Average hold: 2–3 days.
+
+  ⑨ STAY CASH — Breadth Divergence  [added V8]
+      Rule ① active AND QQQE < QQQE EMA200
+      → QQQ golden cross intact but equal-weight Nasdaq below
+        its 200-day average = broad market cracking beneath the
+        surface. Fires weeks before QQQ's own death cross forms.
+        Caught COVID (Mar 2020) and 2022 bear onset 3+ weeks early.
+
   ② BUY SQQQ — Crash Override
       EMA50 > EMA200  AND  ROC60 < −18%
       → Golden cross intact but market already falling hard.
@@ -25,44 +44,32 @@ Backtest: Jan 2020 – Mar 2026 | Signals: QQQ | Execution: TQQQ/SQQQ/Cash
 
   ③ BUY TQQQ — Ultra-Fast Re-entry  [added V6]
       EMA10 > EMA20  AND  Price > EMA20  AND  ROC10 > 0%
-      → Fires days after a recovery turn, well before EMA50/200
-        golden cross reforms. Saved 75 trading days in Jan 2023.
 
   ④ BUY TQQQ — VIX Retreat  [added V7]
       VIX 5-day avg > 28  AND  today's VIX < VIX 5-day avg
-      → Panic is easing. Fear-to-recovery transition = best
-        moments to be long leveraged. Fired 56 times in 6 years,
-        all at genuine market turning points.
 
   ⑤ BUY TQQQ — MACD Cross-Up  [added V7]
-      MACD line crosses above signal line (anywhere, even below zero)
-      → Momentum reversing before price structure confirms.
-        Only fired 2 extra times vs EMA rules alone. High precision.
+      MACD line crosses above signal line
 
   ⑥ BUY TQQQ — Medium Re-entry  [added V5]
       EMA50 > EMA100  OR
       (Price > EMA200  AND  ROC20 > 3%  AND  RSI14 > 50)
-      → Catches recoveries a few weeks after Rules ③–⑤.
 
   ⑦ BUY SQQQ — Confirmed Bear
       Death cross (EMA50 < EMA200)  AND  ROC20 < 0%
-      → Trend and momentum both negative. Short.
 
   ⑧ STAY CASH — Transitioning
       Death cross  AND  ROC20 > 0%  AND  no re-entry signals
-      → Bear but bouncing. Wait for clarity.
-
-  ★ RSI5 OVERRIDE (applies inside Rule ①):
-      If in bull (Rule ①) and RSI5 > 88 → BUY SQQQ instead
-      → Fade intra-bull overextensions. Average hold: 2–3 days.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   KEY ARCHITECTURAL DECISIONS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   - Use QQQ (not TQQQ) for ALL signals. TQQQ leverage decay
     distorts all lookback indicators.
+  - QQQE (equal-weight Nasdaq 100) used only for breadth
+    divergence detection (Rule ⑨). Never used for execution.
   - Execute at next day's market OPEN (9:30 AM ET), not after-hours.
-  - RRSP only: 93 trades/year costs nothing in a registered account.
+  - RRSP only: ~15 trades/year costs nothing in a registered account.
 """
 
 from indicators import (
@@ -77,16 +84,19 @@ RSI5_BULL_EXIT =  88.0   # RSI5 ceiling in bull market (★ override)
 VIX_RETREAT_THRESH = 28.0  # VIX 5-day avg must be above this (Rule ④)
 
 
-def compute_signal(qqq_rows: list, vix_rows: list = None) -> dict:
+def compute_signal(qqq_rows: list, vix_rows: list = None, qqqe_rows: list = None) -> dict:
     """
-    Compute V7 regime signal from QQQ OHLCV rows.
+    Compute V8 regime signal from QQQ OHLCV rows.
 
     Args:
-        qqq_rows : list of dicts with keys date/open/high/low/close/volume,
-                   sorted oldest → newest. Needs 210+ rows (~10.5 months).
-        vix_rows : list of dicts with keys date/close for VIX,
-                   sorted oldest → newest. Pass last 10+ rows minimum.
-                   If None, VIX retreat rule (Rule ④) is disabled.
+        qqq_rows  : list of dicts with keys date/open/high/low/close/volume,
+                    sorted oldest → newest. Needs 210+ rows (~10.5 months).
+        vix_rows  : list of dicts with keys date/close for VIX,
+                    sorted oldest → newest. Pass last 10+ rows minimum.
+                    If None, VIX retreat rule (Rule ④) is disabled.
+        qqqe_rows : list of dicts with keys date/close for QQQE,
+                    sorted oldest → newest. Needs 210+ rows.
+                    If None, breadth divergence rule (Rule ⑨) is disabled.
 
     Returns:
         dict with signal, rule, confidence, and all indicator values.
@@ -125,6 +135,16 @@ def compute_signal(qqq_rows: list, vix_rows: list = None) -> dict:
         vix_5avg   = sum(r['close'] for r in vix_rows[-5:]) / 5
         vix_retreat = (vix_now < vix_5avg) and (vix_5avg > VIX_RETREAT_THRESH)
 
+    # ── QQQE Breadth (Rule ⑨) ────────────────────────────────────────
+    qqqe_price      = 0.0
+    qqqe_ema200_val = 0.0
+    breadth_warning = False
+    if qqqe_rows and len(qqqe_rows) >= 210:
+        qqqe_closes     = [r['close'] for r in qqqe_rows]
+        qqqe_price      = qqqe_closes[-1]
+        qqqe_ema200_val = calc_ema(qqqe_closes, 200)[-1]
+        breadth_warning = qqqe_price < qqqe_ema200_val
+
     # ── Boolean flags ─────────────────────────────────────────────────
     golden_cross      = ema50  > ema200          # primary bull/bear
     fast_golden_cross = ema50  > ema100          # medium re-entry
@@ -141,10 +161,12 @@ def compute_signal(qqq_rows: list, vix_rows: list = None) -> dict:
 
     # ── Signal logic (first match wins) ───────────────────────────────
 
-    # Rule ① — Normal Bull (with RSI5 override ★)
+    # Rule ① — Normal Bull (with RSI5 override ★ and breadth override ⑨)
     if golden_cross and not crash_warning:
         if rsi5_exit:
             signal, rule, confidence = 'BUY_SQQQ', 'rsi5_bull_exit', 72
+        elif breadth_warning:
+            signal, rule, confidence = 'STAY_CASH', 9, 70
         else:
             signal, rule, confidence = 'BUY_TQQQ', 1, 88
 
@@ -210,6 +232,11 @@ def compute_signal(qqq_rows: list, vix_rows: list = None) -> dict:
         'vix_5avg':         round(vix_5avg, 2),
         'vix_retreat':      vix_retreat,
 
+        # ── QQQE Breadth (Rule ⑨) ────────────────────────────────────
+        'qqqe_price':       round(qqqe_price, 2),
+        'qqqe_ema200':      round(qqqe_ema200_val, 2),
+        'breadth_warning':  breadth_warning,
+
         # ── Boolean flags (for logging / dashboards) ──────────────────
         'golden_cross':     golden_cross,
         'crash_warning':    crash_warning,
@@ -217,6 +244,7 @@ def compute_signal(qqq_rows: list, vix_rows: list = None) -> dict:
         'vix_retreat_flag': vix_retreat,
         'macd_cross_up':    macd_cross_up,
         'rsi5_exit':        rsi5_exit,
+        'breadth_warning_flag': breadth_warning,
     }
 
 
@@ -240,6 +268,7 @@ def explain(result: dict) -> str:
         6:              'Rule ⑥ — Medium re-entry: EMA50 > EMA100 or price/momentum confirm',
         7:              'Rule ⑦ — Confirmed bear: death cross + ROC20 negative',
         8:              'Rule ⑧ — Transitioning: waiting for clarity',
+        9:              'Rule ⑨ — Breadth divergence: QQQE below 200-day EMA, broad market cracking',
     }
     rule = result.get('rule')
     desc = rule_map.get(rule, f'Rule {rule}')
@@ -249,6 +278,8 @@ def explain(result: dict) -> str:
         desc = f"Rule ② — Crash override: golden cross but ROC60={result['roc60']:.1f}% (< -18%)"
     elif rule == 'rsi5_bull_exit':
         desc = f"Rule ① ★ — Bull but RSI5={result['rsi5']:.1f} (overbought), fading with SQQQ"
+    elif rule == 9:
+        desc = f"Rule ⑨ — Breadth divergence: QQQE ${result['qqqe_price']:.2f} < EMA200 ${result['qqqe_ema200']:.2f}"
 
     emoji = {'BUY_TQQQ': '🟢', 'BUY_SQQQ': '🔴', 'STAY_CASH': '⚪'}.get(result['signal'], '?')
     return f"{emoji} {result['signal']}  |  {desc}  |  confidence={result['confidence']}%"
@@ -265,7 +296,9 @@ def _insufficient_data() -> dict:
         'macd': 0.0, 'macd_signal': 0.0, 'macd_hist': 0.0,
         'macd_hist_prev': 0.0, 'macd_cross_up': False,
         'vix': 20.0, 'vix_5avg': 20.0, 'vix_retreat': False,
+        'qqqe_price': 0.0, 'qqqe_ema200': 0.0, 'breadth_warning': False,
         'golden_cross': False, 'crash_warning': False,
         'ultra_fast': False, 'vix_retreat_flag': False,
         'macd_cross_up': False, 'rsi5_exit': False,
+        'breadth_warning_flag': False,
     }

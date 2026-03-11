@@ -5,7 +5,7 @@ on:
     # 4:30 PM ET = 21:30 UTC (works for EST)
     # During EDT (summer) ET is UTC-4, so use 20:30 UTC
     # Using 21:30 UTC to be safe — data is always settled by then
-    - cron: '30 21 * * 1-5'   # Mon–Fri at 21:30 UTC
+    - cron: '30 23 * * 1-5'   # Mon–Fri at 23:30 UTC
 
   workflow_dispatch:           # Allow manual trigger from GitHub UI
 
