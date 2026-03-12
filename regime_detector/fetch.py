@@ -93,7 +93,7 @@ def fetch_latest(ticker_key: str, existing_rows: list[dict]) -> list[dict]:
     today        = datetime.today().strftime('%Y-%m-%d')
     tomorrow     = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
 
-    if start >= today:
+    if start > today:
         logger.info(f"{ticker_key}: already up to date ({last_date})")
         return existing_rows
 
