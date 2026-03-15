@@ -61,8 +61,8 @@ def run():
 
     logger.info(f"Data date: {data_date} | QQQ: ${qqq_price:.2f} | VIX: {vix_value:.2f} | QQQE: ${qqqe_rows[-1]['close']:.2f}" if qqqe_rows else f"Data date: {data_date} | QQQ: ${qqq_price:.2f} | VIX: {vix_value:.2f} | QQQE: N/A")
 
-    # 3. Compute regime signal (V8: qqqe_rows added for breadth divergence)
-    result = compute_signal(qqq_rows, vix_rows, qqqe_rows)
+    # 3. Compute regime signal (V9: tqqq/sqqq added for volume z-score)
+    result = compute_signal(qqq_rows, vix_rows, qqqe_rows, tqqq_rows, sqqq_rows)
     signal     = result['signal']
     confidence = result['confidence']
     rule       = result['rule']
@@ -75,6 +75,8 @@ def run():
         f" | RSI14: {result['rsi14']} | RSI5: {result['rsi5']}"
         f" | MACD hist: {result['macd_hist']}"
         f" | QQQE breadth: {'⚠ WARNING' if result.get('breadth_warning') else 'OK'}"
+        f" | Vol Z60: {result.get('vol_zscore', 0):.2f}"
+        f" | CB: {'⚠ ACTIVE' if result.get('circuit_breaker') else 'off'}"
     )
 
     # 4. Load history and check confirmation

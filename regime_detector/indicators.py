@@ -101,6 +101,28 @@ def calc_obv(closes: list, volumes: list) -> list:
     return obv
 
 
+def calc_vol_ratio_zscore(tqqq_volumes: list, sqqq_volumes: list,
+                          window: int = 60) -> float:
+    """
+    Z-score of TQQQ/SQQQ volume ratio over a rolling window.
+    Requires at least `window + 1` aligned volume values.
+    Returns the latest z-score (0.0 if insufficient data).
+    """
+    import math as _math
+    n = len(tqqq_volumes)
+    if n < window + 1 or len(sqqq_volumes) < window + 1:
+        return 0.0
+    ratios = [
+        tv / sv if sv > 0 else 1.0
+        for tv, sv in zip(tqqq_volumes, sqqq_volumes)
+    ]
+    w = ratios[-(window + 1):-1]          # 60-day lookback (excl. today)
+    mean = sum(w) / len(w)
+    var  = sum((x - mean) ** 2 for x in w) / len(w)
+    std  = _math.sqrt(var) if var > 0 else 1e-9
+    return (ratios[-1] - mean) / std
+
+
 def calc_roc(closes: list, period: int) -> float:
     """Rate of Change - percentage price change over N days."""
     if len(closes) < period + 1:
