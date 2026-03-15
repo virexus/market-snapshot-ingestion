@@ -45,7 +45,9 @@ def _ensure_yfinance():
 
 logger = logging.getLogger(__name__)
 
-TICKERS = {
+# ── Ticker Groups ────────────────────────────────────────────────────
+
+TICKERS_NASDAQ = {
     'QQQ':  'QQQ',
     'TQQQ': 'TQQQ',
     'SQQQ': 'SQQQ',
@@ -53,8 +55,21 @@ TICKERS = {
     'QQQE': 'QQQE',   # Equal-weight Nasdaq 100 — breadth divergence (Rule ⑨)
 }
 
-# TQQQ/SQQQ inception: Feb 9, 2010. Use this as default start.
-BOOTSTRAP_START = '2010-02-01'
+TICKERS_SP500 = {
+    'SPY':  'SPY',     # S&P 500 signal source
+    'UPRO': 'UPRO',    # 3× long S&P 500
+    'SPXU': 'SPXU',    # 3× short S&P 500
+    'RSP':  'RSP',     # Equal-weight S&P 500 — breadth divergence
+    'VIX':  '^VIX',    # VIX is already S&P based
+}
+
+# Default: Nasdaq tickers (V10 production)
+TICKERS = TICKERS_NASDAQ
+
+# TQQQ/SQQQ inception: Feb 9, 2010. UPRO/SPXU inception: Jun 25, 2009.
+BOOTSTRAP_START_NASDAQ = '2010-02-01'
+BOOTSTRAP_START_SP500  = '2009-06-01'
+BOOTSTRAP_START = BOOTSTRAP_START_NASDAQ
 
 DATA_DIR = Path(__file__).parent / 'data'
 
@@ -168,23 +183,26 @@ def fetch_latest(ticker_key: str, existing_rows: list) -> list:
         return existing_rows
 
 
-def bootstrap(data_dir=DATA_DIR, start=BOOTSTRAP_START):
+def bootstrap(data_dir=DATA_DIR, start=BOOTSTRAP_START, tickers=None):
     """
-    One-time full download from Yahoo Finance for all tickers.
+    One-time full download from Yahoo Finance.
     REPLACES existing CSVs entirely — no mixing with Google Finance data.
 
     Usage:
-        python fetch.py --bootstrap
+        python fetch.py --bootstrap              # Nasdaq (default)
+        python fetch.py --bootstrap --sp500      # S&P 500
 
     This ensures all data comes from a single source (Yahoo) with
     consistent split adjustments, volume figures, and date formats.
     """
     _ensure_yfinance()
+    if tickers is None:
+        tickers = TICKERS
     data_dir.mkdir(parents=True, exist_ok=True)
     tomorrow = (datetime.today() + timedelta(days=1)).strftime('%Y-%m-%d')
     result = {}
 
-    for key, symbol in TICKERS.items():
+    for key, symbol in tickers.items():
         path = data_dir / f"{key}.csv"
         print(f"  {key} ({symbol}): downloading {start} → today ... ", end='', flush=True)
 
@@ -328,34 +346,58 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s  %(levelname)-8s  %(message)s')
 
+    # Determine ticker group
+    sp500_mode = '--sp500' in sys.argv
+
     if '--bootstrap' in sys.argv:
-        print("=" * 60)
-        print("  BOOTSTRAP: Full Yahoo Finance download")
-        print("  This will REPLACE all existing CSVs.")
-        print("  Old files will be backed up as .csv.bak")
-        print("=" * 60)
+        if sp500_mode:
+            tickers = TICKERS_SP500
+            start   = BOOTSTRAP_START_SP500
+            label   = "S&P 500 (SPY/UPRO/SPXU/RSP/VIX)"
+            data_dir = DATA_DIR.parent / 'data_sp500'
+        else:
+            tickers = TICKERS_NASDAQ
+            start   = BOOTSTRAP_START_NASDAQ
+            label   = "Nasdaq (QQQ/TQQQ/SQQQ/QQQE/VIX)"
+            data_dir = DATA_DIR
 
         # Optional: custom start date
-        start = BOOTSTRAP_START
         for arg in sys.argv:
             if arg.startswith('--start='):
                 start = arg.split('=')[1]
 
-        print(f"\n  Downloading from {start} ...\n")
-        data = bootstrap(start=start)
-        print(f"\n  Done. Run --validate to verify.\n")
+        print("=" * 60)
+        print(f"  BOOTSTRAP: {label}")
+        print(f"  Output:    {data_dir}")
+        print(f"  From:      {start}")
+        print("  Old files will be backed up as .csv.bak")
+        print("=" * 60)
+
+        print(f"\n  Downloading ...\n")
+        data = bootstrap(data_dir=data_dir, start=start, tickers=tickers)
+
+        print(f"\n  Done. Run --validate {'--sp500 ' if sp500_mode else ''}to verify.\n")
 
     elif '--validate' in sys.argv:
+        data_dir = (DATA_DIR.parent / 'data_sp500') if sp500_mode else DATA_DIR
+        label = "S&P 500" if sp500_mode else "Nasdaq"
         print("=" * 60)
-        print("  DATA VALIDATION")
+        print(f"  DATA VALIDATION ({label})")
+        print(f"  Directory: {data_dir}")
         print("=" * 60)
-        validate()
+        validate(data_dir=data_dir)
 
     else:
         print("Usage:")
-        print("  python fetch.py --bootstrap           Full Yahoo download (one-time)")
-        print("  python fetch.py --bootstrap --start=2010-02-01")
-        print("  python fetch.py --validate            Check data integrity")
+        print("  python fetch.py --bootstrap              Nasdaq tickers (QQQ/TQQQ/SQQQ/QQQE/VIX)")
+        print("  python fetch.py --bootstrap --sp500      S&P 500 tickers (SPY/UPRO/SPXU/RSP/VIX)")
+        print("  python fetch.py --bootstrap --start=2009-06-01")
+        print("  python fetch.py --validate               Validate Nasdaq data")
+        print("  python fetch.py --validate --sp500       Validate S&P 500 data")
+        print()
+        print("Data directories:")
+        print(f"  Nasdaq: {DATA_DIR}")
+        print(f"  S&P 500: {DATA_DIR.parent / 'data_sp500'}")
         print()
         print("For daily updates, use main.py (calls load_and_update_all)")
 

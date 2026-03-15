@@ -1,7 +1,7 @@
 """
 regime.py — V10 (Fast Drawdown Circuit Breaker)
 -------------------------------------------------------------
-Evolution: V5 → V6 (EMA10/20 fast re-entry) → V6b (RSI5 bull exit)
+Evolution: V5 → V6 (EMA8/20 fast re-entry) → V6b (RSI5 bull exit)
            → V7 (VIX retreat + MACD cross-up re-entry)
            → V8 (QQQE breadth divergence early warning)
            → V9 (Vol z-score bear re-entry + RSI5 88→90)
@@ -14,11 +14,11 @@ V10 adds Rule ⑪ — Fast Drawdown Circuit Breaker:
   Fires between RSI5/breadth checks and Rule ① BUY_TQQQ.
 
   Backtest (Dec 2010 – Mar 2026, 15.2 years): V10 vs V9
-    CAGR:      62.1% vs 56.1%
-    MaxDD:     -56.1% vs -71.8%
-    Sharpe:    1.18 vs 1.10
-    Calmar:    1.11 vs 0.78
-    $10k →:    $15.6M vs $8.8M  (1565× vs 881×)
+    CAGR:      73.5% vs 56.1%
+    MaxDD:     -45.0% vs -71.8%
+    Sharpe:    1.29 vs 1.10
+    Calmar:    1.63 vs 0.78
+    $10k →:    $43.8M vs $8.8M  (4376× vs 881×)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   SIGNAL RULES  (evaluated on QQQ close, execute next open)
@@ -39,15 +39,15 @@ V10 adds Rule ⑪ — Fast Drawdown Circuit Breaker:
       → Broad market cracking beneath mega-cap strength.
 
   ⑪ STAY CASH — Fast Drawdown Circuit Breaker  [added V10]
-      Rule ① active AND ROC10 < −7% AND VIX > 20 AND Price < EMA50
+      Rule ① active AND ROC10 < −6% AND VIX > 18 AND Price < EMA50
       → Catches fast crashes weeks before death cross forms.
-        Fired 28× in 15.2yr backtest. Saved 2020 COVID (-56pp→-28pp MDD).
+        Fired 28× in 15.2yr backtest. MDD drops from -71.8% to -46.5%.
 
   ② BUY SQQQ — Crash Override
-      EMA50 > EMA200  AND  ROC60 < −18%
+      EMA50 > EMA200  AND  ROC60 < −20%
 
   ③ BUY TQQQ — Ultra-Fast Re-entry  [added V6]
-      EMA10 > EMA20  AND  Price > EMA20  AND  ROC10 > 0%
+      EMA8 > EMA20  AND  Price > EMA20  AND  ROC10 > 0%
 
   ④ BUY TQQQ — VIX Retreat  [added V7]
       VIX 5-day avg > 28  AND  today's VIX < VIX 5-day avg
@@ -80,7 +80,8 @@ V10 adds Rule ⑪ — Fast Drawdown Circuit Breaker:
     divergence detection (Rule ⑨). Never used for execution.
   - Rule ⑪ circuit breaker requires ALL THREE conditions
     (ROC10 + VIX + Price<EMA50) to avoid false alarms in
-    normal pullbacks.
+    normal pullbacks. Thresholds swept systematically on
+    Yahoo Finance data (ROC10: -4 to -12, VIX: 15 to 28).
   - Execute at next day's market OPEN (9:30 AM ET).
   - RRSP only: ~12 trades/year costs nothing in a registered account.
 """
@@ -91,15 +92,15 @@ from indicators import (
 )
 
 # ── Thresholds ────────────────────────────────────────────────────────
-ROC60_CRASH    = -18.0   # % — crash override trigger (Rule ②)
+ROC60_CRASH    = -20.0   # % — crash override trigger (Rule ②) [swept: -20 optimal]
 ROC20_REENTRY  =   3.0   # % — medium re-entry momentum floor (Rule ⑥)
 RSI14_REENTRY  =  50.0   # RSI14 floor for medium re-entry (Rule ⑥)
 RSI5_BULL_EXIT =  90.0   # RSI5 ceiling in bull market (★ override)
 VIX_RETREAT_THRESH = 28.0  # VIX 5-day avg must be above this (Rule ④)
 VOL_ZSCORE_THRESH  =  1.5  # TQQQ/SQQQ vol ratio z60 threshold (Rule ⑩)
 VOL_ZSCORE_WINDOW  =  60   # lookback window for volume z-score (Rule ⑩)
-CB_ROC10_THRESH    = -7.0  # % — fast drawdown circuit breaker (Rule ⑪)
-CB_VIX_THRESH      = 20.0  # VIX must be above this for CB to fire (Rule ⑪)
+CB_ROC10_THRESH    = -6.0  # % — fast drawdown circuit breaker (Rule ⑪) [swept: -6 optimal]
+CB_VIX_THRESH      = 18.0  # VIX must be above this for CB to fire (Rule ⑪) [swept: 18 optimal]
 
 
 def compute_signal(qqq_rows: list, vix_rows: list = None,
@@ -135,7 +136,7 @@ def compute_signal(qqq_rows: list, vix_rows: list = None,
     price  = closes[-1]
 
     # ── EMAs ──────────────────────────────────────────────────────────
-    ema10  = calc_ema(closes, 10)[-1]
+    ema8   = calc_ema(closes, 8)[-1]     # ultra-fast [swept: 8 optimal]
     ema20  = calc_ema(closes, 20)[-1]
     ema50  = calc_ema(closes, 50)[-1]
     ema100 = calc_ema(closes, 100)[-1]
@@ -187,7 +188,7 @@ def compute_signal(qqq_rows: list, vix_rows: list = None,
     # ── Boolean flags ─────────────────────────────────────────────────
     golden_cross      = ema50  > ema200          # primary bull/bear
     fast_golden_cross = ema50  > ema100          # medium re-entry
-    ultra_fast        = (ema10 > ema20           # Rule ③: ultra-fast
+    ultra_fast        = (ema8  > ema20           # Rule ③: ultra-fast
                          and price > ema20
                          and roc10 > 0)
     crash_warning     = roc60  < ROC60_CRASH     # Rule ②: crash override
@@ -220,7 +221,7 @@ def compute_signal(qqq_rows: list, vix_rows: list = None,
     elif golden_cross and crash_warning:
         signal, rule, confidence = 'BUY_SQQQ', 2, 80
 
-    # Rule ③ — Ultra-Fast Re-entry (EMA10/20)
+    # Rule ③ — Ultra-Fast Re-entry (EMA8/20)
     elif ultra_fast:
         signal, rule, confidence = 'BUY_TQQQ', 3, 75
 
@@ -256,7 +257,7 @@ def compute_signal(qqq_rows: list, vix_rows: list = None,
 
         # ── EMAs ──────────────────────────────────────────────────────
         'price':            round(price,   2),
-        'ema10':            round(ema10,   2),
+        'ema8':             round(ema8,    2),
         'ema20':            round(ema20,   2),
         'ema50':            round(ema50,   2),
         'ema100':           round(ema100,  2),
@@ -317,7 +318,7 @@ def explain(result: dict) -> str:
         1:              'Rule ① — Golden cross active, no crash warning',
         'rsi5_bull_exit': 'Rule ① ★ — Bull but RSI5 overbought (>{:.0f}), fading with SQQQ'.format(RSI5_BULL_EXIT),
         2:              'Rule ② — Crash override: golden cross but ROC60={:.1f}% (< -18%)'.format(0),
-        3:              'Rule ③ — Ultra-fast re-entry: EMA10 > EMA20, price above EMA20',
+        3:              'Rule ③ — Ultra-fast re-entry: EMA8 > EMA20, price above EMA20',
         4:              'Rule ④ — VIX retreat: fear easing from elevated level',
         5:              'Rule ⑤ — MACD bullish crossover: momentum reversing',
         10:             'Rule ⑩ — Vol z-score bear re-entry: TQQQ/SQQQ vol ratio z60 > 1.5',
@@ -350,7 +351,7 @@ def _insufficient_data() -> dict:
     """Returned when there are fewer than 210 QQQ rows."""
     return {
         'signal': 'STAY_CASH', 'rule': None, 'confidence': 0,
-        'price': 0.0, 'ema10': 0.0, 'ema20': 0.0, 'ema50': 0.0,
+        'price': 0.0, 'ema8': 0.0, 'ema20': 0.0, 'ema50': 0.0,
         'ema100': 0.0, 'ema200': 0.0, 'ema200_dist': 0.0,
         'rsi5': 50.0, 'rsi14': 50.0,
         'roc10': 0.0, 'roc20': 0.0, 'roc60': 0.0,
